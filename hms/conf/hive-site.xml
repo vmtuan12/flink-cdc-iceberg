@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  Hive Metastore configuration used by both:
+    - The Hive Metastore Docker container
+    - The Flink job (via Hadoop Configuration, see IcebergSinkFactory)
+
+  Key settings for Iceberg + MinIO:
+    - warehouse points to s3a://iceberg/warehouse
+    - S3A path-style access (required for MinIO)
+-->
+<configuration>
+
+  <!-- ── Metastore thrift server ─────────────────────────────────────────── -->
+  <property>
+    <name>hive.metastore.uris</name>
+    <value>thrift://hive-metastore:9083</value>
+  </property>
+  <property>
+    <name>hive.metastore.warehouse.dir</name>
+    <value>s3a://iceberg/</value>
+  </property>
+
+  <!-- ── JDBC backend (Postgres) ─────────────────────────────────────────── -->
+  <property>
+    <name>javax.jdo.option.ConnectionDriverName</name>
+    <value>org.postgresql.Driver</value>
+  </property>
+  <property>
+    <name>javax.jdo.option.ConnectionURL</name>
+    <value>jdbc:postgresql://hive-metastore-db:5432/metastore_db</value>
+  </property>
+  <property>
+    <name>javax.jdo.option.ConnectionUserName</name>
+    <value>hive</value>
+  </property>
+  <property>
+    <name>javax.jdo.option.ConnectionPassword</name>
+    <value>hive</value>
+  </property>
+  <property>
+    <name>datanucleus.autoCreateSchema</name>
+    <value>true</value>
+  </property>
+
+
+  <!-- ── Metastore schema validation ────────────────────────────────────── -->
+  <property>
+    <name>hive.metastore.schema.verification</name>
+    <value>false</value>
+  </property>
+
+</configuration>

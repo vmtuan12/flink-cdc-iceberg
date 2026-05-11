@@ -1,0 +1,58 @@
+package com.example;
+
+import com.example.config.AppConfig;
+import com.example.deserialization.DebeziumAvroToRowDataDeserializer;
+import com.example.sink.IcebergSinkFactoryV2;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.connector.kafka.source.KafkaSource;
+import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.table.data.RowData;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.List;
+
+public class CdcToIcebergJob {
+
+    private static final Logger LOG = LoggerFactory.getLogger(CdcToIcebergJob.class);
+
+    public static void main(String[] args) throws Exception {
+        AppConfig config = AppConfig.fromArgs(args);
+        LOG.info("Starting CDC-to-Iceberg job with config: {}", config);
+
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+
+        env.enableCheckpointing(config.getCheckpointIntervalMs());
+        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(config.getCheckpointIntervalMs() / 2);
+        env.getCheckpointConfig().setCheckpointTimeout(60_000);
+        env.getCheckpointConfig().setMaxConcurrentCheckpoints(1);
+
+        KafkaSource<RowData> kafkaSource = KafkaSource.<RowData>builder()
+                .setBootstrapServers(config.getKafkaBootstrapServers())
+                .setTopics(config.getKafkaTopic())
+                .setGroupId(config.getKafkaGroupId())
+                .setStartingOffsets(OffsetsInitializer.committedOffsets(
+                        org.apache.kafka.clients.consumer.OffsetResetStrategy.EARLIEST))
+                .setDeserializer(new DebeziumAvroToRowDataDeserializer(config.getSchemaRegistryUrl()))
+                .setProperties(config.kafkaConsumerProperties())
+                .build();
+
+        DataStream<RowData> cdcStream = env
+                .fromSource(kafkaSource, WatermarkStrategy.noWatermarks(), "Kafka-CDC-Source")
+                .name("kafka-cdc-source")
+                .uid("kafka-cdc-source");
+
+//        cdcStream.print();
+
+        DataStream<RowData> rowDataStream = cdcStream
+                .flatMap(new com.example.transform.FlatMapRowData())
+                .name("cdc-to-rowdata")
+                .uid("cdc-to-rowdata");
+
+        IcebergSinkFactoryV2.attachSink(rowDataStream, config, List.of("id"));
+
+        env.execute(config.getJobName());
+    }
+}

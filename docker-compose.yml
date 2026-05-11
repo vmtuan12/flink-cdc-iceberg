@@ -1,0 +1,320 @@
+version: "3.8"
+
+# ── Local development stack ───────────────────────────────────────────────────
+# Starts: ZooKeeper, Kafka, Schema Registry, Debezium Connect,
+#         Postgres (source DB), MinIO (S3-compatible storage),
+#         Hive Metastore (backed by Postgres for the HMS db).
+#
+# After starting:
+#   1. Create MinIO bucket:  mc alias set local http://localhost:9000 minioadmin minioadmin
+#                            mc mb local/iceberg
+#   2. Register Debezium connector: POST to http://localhost:8083/connectors
+#      (see debezium-connector.json)
+#   3. Submit Flink job (see README)
+
+x-flink-common: &flink-common
+  build:
+    context: ./flink
+    dockerfile: Dockerfile
+  environment:
+    - |
+      FLINK_PROPERTIES=
+      jobmanager.rpc.address: flink-jobmanager
+      jobmanager.rpc.port: 6123
+      state.backend: rocksdb
+      state.checkpoints.dir: s3a://iceberg/flink-checkpoints
+      state.savepoints.dir: s3a://iceberg/flink-savepoints
+      s3.endpoint: http://minio:9000
+      s3.access-key: minioadmin
+      s3.secret-key: minioadmin
+      s3.path.style.access: true
+      parallelism.default: 2
+  depends_on:
+    - minio
+    - hive-metastore
+    - kafka
+
+services:
+
+  # ── ZooKeeper ───────────────────────────────────────────────────────────────
+  zookeeper:
+    container_name: zookeeper
+    hostname: zookeeper
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - cdc
+
+  # ── Kafka ────────────────────────────────────────────────────────────────────
+  kafka:
+    container_name: kafka
+    hostname: kafka
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on: [zookeeper]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "9092:9092"
+    networks:
+      - cdc
+
+  # ── Schema Registry ──────────────────────────────────────────────────────────
+  schema-registry:
+    container_name: schema-registry
+    hostname: schema-registry
+    image: confluentinc/cp-schema-registry:7.5.0
+    depends_on: [kafka]
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+    ports:
+      - "8081:8081"
+    networks:
+      - cdc
+
+  # ── Source DB (Postgres) ─────────────────────────────────────────────────────
+  postgres:
+    container_name: postgres
+    hostname: postgres
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: inventory
+    command: ["postgres", "-c", "wal_level=logical"]
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - cdc
+
+  # ── Debezium Kafka Connect ───────────────────────────────────────────────────
+  debezium:
+    container_name: debezium
+    hostname: debezium
+    image: confluentinc/cp-kafka-connect:7.5.0   # has AvroConverter built-in
+    depends_on: [ kafka, postgres, schema-registry ]
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: kafka:29092
+      CONNECT_GROUP_ID: kafka.connect.debezium
+      CONNECT_CONFIG_STORAGE_TOPIC: _debezium.configs
+      CONNECT_OFFSET_STORAGE_TOPIC: _debezium.offsets
+      CONNECT_STATUS_STORAGE_TOPIC: _debezium.status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_KEY_CONVERTER: io.confluent.connect.avro.AvroConverter
+      CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
+      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      CONNECT_REST_ADVERTISED_HOST_NAME: debezium
+      CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components
+    command:
+      - bash
+      - -c
+      - |
+        # Install Debezium Postgres connector
+        confluent-hub install --no-prompt debezium/debezium-connector-postgresql:2.5.4
+        /etc/confluent/docker/run
+    ports:
+      - "8083:8083"
+    networks:
+      - cdc
+
+  # ── MinIO (S3-compatible object store) ───────────────────────────────────────
+  minio:
+    container_name: minio
+    hostname: minio
+    image: registry.tekoapis.com/bitnami/minio:2025.4.22-debian-12-r1
+    environment:
+      MINIO_ROOT_USER: root
+      MINIO_ROOT_PASSWORD: root123456
+    ports:
+      - 9000:9000
+      - 9001:9001
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cdc
+
+  # Create the iceberg bucket on startup
+  minio-init:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        sleep 5;
+        mc alias set local http://minio:9000 root root123456;
+        mc mb --ignore-existing local/iceberg;
+        echo 'Bucket created';
+      "
+    networks:
+      - cdc
+
+  # ── Hive Metastore (standalone) ──────────────────────────────────────────────
+  # Uses a Postgres backend for the HMS database.
+  hive-metastore-db:
+    container_name: hive-metastore-db
+    hostname: hive-metastore-db
+    image: postgres:13
+    environment:
+      POSTGRES_DB: metastore_db
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hive -d metastore_db"]
+      interval: 10s
+      timeout: 2s
+      retries: 30
+    volumes:
+      - hms_db_data:/var/lib/postgresql/data
+    networks:
+      - cdc
+
+  hive-metastore:
+    container_name: hive-metastore
+    hostname: hive-metastore
+    image: apache/hive:3.1.3
+    depends_on:
+      hive-metastore-db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    ports:
+      - "9083:9083"
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+      HIVE_AUX_JARS_PATH: /opt/hadoop/share/hadoop/tools/lib/hadoop-aws-3.1.0.jar:/opt/hadoop/share/hadoop/tools/lib/aws-java-sdk-bundle-1.11.271.jar
+      SERVICE_OPTS: >-
+        -Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver
+        -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://hive-metastore-db:5432/metastore_db
+        -Djavax.jdo.option.ConnectionUserName=hive
+        -Djavax.jdo.option.ConnectionPassword=hive
+        -Dhive.metastore.warehouse.dir=s3a://iceberg/
+    volumes:
+      - ./hms/conf/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./hms/conf/hive-site.xml:/opt/hive/conf/hive-site.xml:ro
+      - ./jars/postgresql-42.7.3.jar:/opt/hive/lib/postgresql-42.7.3.jar:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        # Copy PostgreSQL JDBC driver into Hive lib
+        cp /tmp/postgresql-42.7.3.jar /opt/hive/lib/postgresql-42.7.3.jar
+        # Start the metastore
+        /entrypoint.sh
+    networks:
+      - cdc
+
+  trino:
+    container_name: trino
+    hostname: trino
+    image: registry.tekoapis.com/dataops/trino:468-iceberg-branching-experimental-rc2
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./trino:/etc/trino
+    environment:
+      - JAVA_TOOL_OPTIONS=-Xmx4G
+    networks:
+      - cdc
+
+  kafdrop:
+    container_name: kafdrop
+    hostname: kafdrop
+    image: obsidiandynamics/kafdrop:latest
+    depends_on:
+      - kafka
+    ports:
+      - "9123:9123"
+    environment:
+      SERVER_PORT: 9123
+      MANAGEMENT_SERVER_PORT: 9123
+      KAFKA_BROKERCONNECT: kafka:29092
+    networks:
+      - cdc
+
+  flink-jobmanager:
+    <<: *flink-common
+    command: jobmanager
+    container_name: flink-jobmanager
+    hostname: flink-jobmanager
+    ports:
+      - "8082:8081"   # Web UI
+      - "6123:6123"   # RPC
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.rpc.port: 6123
+        jobmanager.memory.process.size: 1600m
+        state.backend: rocksdb
+        state.checkpoints.dir: s3a://iceberg/flink-checkpoints
+        state.savepoints.dir: s3a://iceberg/flink-savepoints
+        s3.endpoint: http://minio:9000
+        s3.access-key: root
+        s3.secret-key: root123456
+        s3.path.style.access: true
+        parallelism.default: 2
+        rest.port: 8081
+    networks:
+      - cdc
+
+  # ── Flink TaskManager ────────────────────────────────────────────────────────
+  flink-taskmanager:
+    <<: *flink-common
+    command: taskmanager
+    deploy:
+      replicas: 2
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.rpc.port: 6123
+        taskmanager.memory.process.size: 2048m
+        taskmanager.numberOfTaskSlots: 4
+        state.backend: rocksdb
+        state.checkpoints.dir: s3a://iceberg/flink-checkpoints
+        state.savepoints.dir: s3a://iceberg/flink-savepoints
+        s3.endpoint: http://minio:9000
+        s3.access-key: root
+        s3.secret-key: root123456
+        s3.path.style.access: true
+        parallelism.default: 2
+    depends_on:
+      - flink-jobmanager
+    networks:
+      - cdc
+
+volumes:
+  postgres_data:
+  minio_data:
+  hms_db_data:
+
+networks:
+  cdc:
+    driver: "bridge"
+    name: cdcnet
