@@ -14,6 +14,7 @@ import org.apache.flink.connector.kafka.source.reader.deserializer.KafkaRecordDe
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.data.*;
+import org.apache.flink.table.types.logical.TimestampType;
 import org.apache.flink.types.RowKind;
 import org.apache.flink.util.Collector;
 
@@ -250,10 +251,19 @@ public class DebeziumAvroToRowDataDeserializer
                     return null;
                 }
                 if (value instanceof Long) {
-                    // Debezium sends microseconds since epoch for TIMESTAMP columns
-                    return TimestampData.fromEpochMillis(
-                            ((Long) value) / 1_000,
-                            (int) (((Long) value) % 1_000) * 1_000);
+                    int precision = ((TimestampType) fieldDatatype.getLogicalType()).getPrecision();
+
+                    if (precision <= 3) {
+                        // Milliseconds since epoch (io.debezium.time.Timestamp → TIMESTAMP(3))
+                        long millis = (Long) value;
+                        return TimestampData.fromEpochMillis(millis, 0);
+                    } else {
+                        // Microseconds since epoch (io.debezium.time.MicroTimestamp → TIMESTAMP(6))
+                        long micros = (Long) value;
+                        long millis = micros / 1_000;
+                        int nanoAdj = (int) (micros % 1_000) * 1_000; // remaining micros → nanos
+                        return TimestampData.fromEpochMillis(millis, nanoAdj);
+                    }
                 }
                 LocalDateTime ldt = LocalDateTime.parse(
                         value.toString(), DateTimeFormatter.ISO_LOCAL_DATE_TIME);

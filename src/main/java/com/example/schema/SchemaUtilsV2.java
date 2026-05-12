@@ -40,6 +40,9 @@ public class SchemaUtilsV2 {
                 if (klazz == io.debezium.time.MicroTimestamp.class) {
                     return DataTypes.TIMESTAMP(6);
                 }
+                if (klazz == io.debezium.time.Timestamp.class) {
+                    return DataTypes.TIMESTAMP(3);
+                }
                 if (klazz == io.debezium.time.Date.class) {
                     return DataTypes.DATE();
                 }
