@@ -19,15 +19,16 @@ Postgres ──[WAL]──► Debezium Connect ──► Kafka
 
 ## Version Matrix
 
-| Component | Version   |
-|-----------|-----------|
-| Apache Flink | 1.19.1    |
-| Apache Iceberg | 1.8.0     |
-| Apache Hadoop | 3.3.4     |
-| Apache Hive (HMS) | 3.1.3     |
-| Apache Kafka | 3.5.1     |
+| Component             | Version    |
+|-----------------------|------------|
+| Apache Flink          | 1.19.1     |
+| Apache Iceberg        | 1.8.0      |
+| Apache Hadoop         | 3.3.4      |
+| Apache Hive (HMS)     | 3.1.3      |
+| Apache Kafka          | 3.6.2      |
 | flink-connector-kafka | 3.2.0-1.19 |
-| Java | 17        |
+| Debezium              | 2.7.0      |
+| Java                  | 17         |
 
 ---
 

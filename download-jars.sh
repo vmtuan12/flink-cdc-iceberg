@@ -134,8 +134,8 @@ download \
 
 
 download \
-  "$MAVEN_CENTRAL/org/apache/flink/flink-sql-parquet/1.18.1/flink-sql-parquet-1.18.1.jar" \
-  "$LIB_DIR/flink-sql-parquet-1.18.1.jar"
+  "$MAVEN_CENTRAL/org/apache/flink/flink-sql-parquet/1.19.1/flink-sql-parquet-1.19.1.jar" \
+  "$LIB_DIR/flink-sql-parquet-1.19.1.jar"
 
 download \
   "https://repo1.maven.org/maven2/commons-logging/commons-logging/1.1.3/commons-logging-1.1.3.jar" \
@@ -154,12 +154,12 @@ download \
   "$LIB_DIR/commons-configuration2-2.1.1.jar"
 
 download \
-  "https://packages.confluent.io/maven/io/confluent/kafka-schema-registry-client/7.5.0/kafka-schema-registry-client-7.5.0.jar" \
-  "$LIB_DIR/kafka-schema-registry-client-7.5.0.jar"
+  "https://packages.confluent.io/maven/io/confluent/kafka-schema-registry-client/7.6.2/kafka-schema-registry-client-7.6.2.jar" \
+  "$LIB_DIR/kafka-schema-registry-client-7.6.2.jar"
 
 download \
-  "https://packages.confluent.io/maven/io/confluent/kafka-avro-serializer/7.5.0/kafka-avro-serializer-7.5.0.jar" \
-  "$LIB_DIR/kafka-avro-serializer-7.5.0.jar"
+  "https://packages.confluent.io/maven/io/confluent/kafka-avro-serializer/7.6.2/kafka-avro-serializer-7.6.2.jar" \
+  "$LIB_DIR/kafka-avro-serializer-7.6.2.jar"
 
 download \
   "https://repo1.maven.org/maven2/org/apache/avro/avro/1.11.3/avro-1.11.3.jar" \
@@ -182,8 +182,8 @@ download \
   "$LIB_DIR/guava-32.1.3-jre.jar"
 
 download \
-  "https://repo1.maven.org/maven2/io/debezium/debezium-core/2.5.4.Final/debezium-core-2.5.4.Final.jar" \
-  "$LIB_DIR/debezium-core-2.5.4.Final.jar"
+  "https://repo1.maven.org/maven2/io/debezium/debezium-core/2.7.0.Final/debezium-core-2.7.0.Final.jar" \
+  "$LIB_DIR/debezium-core-2.7.0.Final.jar"
 
 download \
   "https://repo1.maven.org/maven2/org/apache/kafka/connect-api/3.5.1/connect-api-3.5.1.jar" \

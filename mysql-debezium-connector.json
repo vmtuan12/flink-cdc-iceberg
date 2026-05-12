@@ -1,0 +1,20 @@
+{
+  "name": "mysql-site-sku-daily-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.mysql.MySqlConnector",
+    "database.hostname": "mysql",
+    "database.port": "3306",
+    "database.user": "root",
+    "database.password": "root",
+    "database.server.id": "2",
+    "database.include.list": "inventory",
+    "table.include.list": "inventory.data_daily",
+
+    "topic.prefix": "mysql-dbserver1",
+    "snapshot.mode": "initial",
+
+    "schema.history.internal": "io.debezium.storage.kafka.history.KafkaSchemaHistory",
+    "schema.history.internal.kafka.bootstrap.servers": "kafka:29092",
+    "schema.history.internal.kafka.topic": "_debezium.mysql.schema-history"
+  }
+}

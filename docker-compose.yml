@@ -40,7 +40,7 @@ services:
   zookeeper:
     container_name: zookeeper
     hostname: zookeeper
-    image: confluentinc/cp-zookeeper:7.5.0
+    image: confluentinc/cp-zookeeper:7.6.2
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -53,7 +53,7 @@ services:
   kafka:
     container_name: kafka
     hostname: kafka
-    image: confluentinc/cp-kafka:7.5.0
+    image: confluentinc/cp-kafka:7.6.2
     depends_on: [zookeeper]
     environment:
       KAFKA_BROKER_ID: 1
@@ -74,7 +74,7 @@ services:
   schema-registry:
     container_name: schema-registry
     hostname: schema-registry
-    image: confluentinc/cp-schema-registry:7.5.0
+    image: confluentinc/cp-schema-registry:7.6.2
     depends_on: [kafka]
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
@@ -102,12 +102,35 @@ services:
     networks:
       - cdc
 
+  mysql:
+    container_name: mysql
+    hostname: mysql
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: inventory
+      MYSQL_USER: mysql
+      MYSQL_PASSWORD: mysql
+    command:
+      - --server-id=1
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --binlog-row-image=FULL
+      - --expire-logs-days=1
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./sql/mysql-init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - cdc
+
   # ── Debezium Kafka Connect ───────────────────────────────────────────────────
   debezium:
     container_name: debezium
     hostname: debezium
-    image: confluentinc/cp-kafka-connect:7.5.0   # has AvroConverter built-in
-    depends_on: [ kafka, postgres, schema-registry ]
+    image: confluentinc/cp-kafka-connect:7.6.2   # has AvroConverter built-in
+    depends_on: [ kafka, postgres, mysql, schema-registry ]
     environment:
       CONNECT_BOOTSTRAP_SERVERS: kafka:29092
       CONNECT_GROUP_ID: kafka.connect.debezium
@@ -128,7 +151,16 @@ services:
       - -c
       - |
         # Install Debezium Postgres connector
-        confluent-hub install --no-prompt debezium/debezium-connector-postgresql:2.5.4
+        confluent-hub install --no-prompt debezium/debezium-connector-postgresql:2.7.0
+        
+        curl -fSL -o /tmp/debezium-mysql.tar.gz \
+          https://repo1.maven.org/maven2/io/debezium/debezium-connector-mysql/2.7.0.Final/debezium-connector-mysql-2.7.0.Final-plugin.tar.gz \
+        && mkdir -p /usr/share/confluent-hub-components/debezium-connector-mysql \
+        && tar -xzf /tmp/debezium-mysql.tar.gz \
+        -C /usr/share/confluent-hub-components/debezium-connector-mysql \
+        --strip-components=1 \
+        && rm /tmp/debezium-mysql.tar.gz
+        
         /etc/confluent/docker/run
     ports:
       - "8083:8083"
@@ -311,6 +343,7 @@ services:
 
 volumes:
   postgres_data:
+  mysql_data:
   minio_data:
   hms_db_data:
 
