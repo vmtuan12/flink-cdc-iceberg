@@ -15,6 +15,9 @@
 
     "schema.history.internal": "io.debezium.storage.kafka.history.KafkaSchemaHistory",
     "schema.history.internal.kafka.bootstrap.servers": "kafka:29092",
-    "schema.history.internal.kafka.topic": "_debezium.mysql.schema-history"
+    "schema.history.internal.kafka.topic": "_debezium.mysql.schema-history",
+
+    "topic.creation.default.partitions": 2,
+    "topic.creation.default.replication.factor": 1
   }
 }
