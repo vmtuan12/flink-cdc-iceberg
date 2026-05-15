@@ -22,13 +22,13 @@ public class CdcToIcebergJob {
     private static final Logger LOG = LoggerFactory.getLogger(CdcToIcebergJob.class);
 
     public static void main(String[] args) throws Exception {
-        AppConfig config = AppConfig.fromArgs(args);
-        LOG.info("Starting CDC-to-Iceberg job with config: {}", config);
+        AppConfig appConfig = AppConfig.fromArgs(args);
+        LOG.info("Starting CDC-to-Iceberg job with config: {}", appConfig);
 
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-        env.enableCheckpointing(config.getCheckpointIntervalMs());
-        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(config.getCheckpointIntervalMs());
+        env.enableCheckpointing(appConfig.getCheckpointIntervalMs());
+        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(appConfig.getCheckpointIntervalMs());
         env.getCheckpointConfig().setCheckpointTimeout(60_000);
         env.getCheckpointConfig().setMaxConcurrentCheckpoints(1);
         env.getCheckpointConfig().setExternalizedCheckpointCleanup(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
@@ -36,20 +36,20 @@ public class CdcToIcebergJob {
         Configuration flinkConfig = new Configuration();
 
         flinkConfig.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
-        flinkConfig.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, "s3a://iceberg/flink-checkpoints/" + config.getJobName());
-        flinkConfig.set(CheckpointingOptions.SAVEPOINT_DIRECTORY, "s3a://iceberg/flink-savepoints/" + config.getJobName());
+        flinkConfig.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, "s3a://iceberg/flink-checkpoints/" + appConfig.getJobName());
+        flinkConfig.set(CheckpointingOptions.SAVEPOINT_DIRECTORY, "s3a://iceberg/flink-savepoints/" + appConfig.getJobName());
 
         env.configure(flinkConfig);
-        env.setParallelism(2);
+        env.setParallelism(appConfig.getParallelism());
 
         KafkaSource<RowData> kafkaSource = KafkaSource.<RowData>builder()
-                .setBootstrapServers(config.getKafkaBootstrapServers())
-                .setTopics(config.getKafkaTopic())
-                .setGroupId(config.getKafkaGroupId())
+                .setBootstrapServers(appConfig.getKafkaBootstrapServers())
+                .setTopics(appConfig.getKafkaTopic())
+                .setGroupId(appConfig.getKafkaGroupId())
                 .setStartingOffsets(OffsetsInitializer.committedOffsets(
                         org.apache.kafka.clients.consumer.OffsetResetStrategy.EARLIEST))
-                .setDeserializer(new DebeziumAvroToRowDataDeserializer(config.getSchemaRegistryUrl()))
-                .setProperties(config.kafkaConsumerProperties())
+                .setDeserializer(new DebeziumAvroToRowDataDeserializer(appConfig.getSchemaRegistryUrl()))
+                .setProperties(appConfig.kafkaConsumerProperties())
                 .build();
 
         DataStream<RowData> cdcStream = env
@@ -64,8 +64,8 @@ public class CdcToIcebergJob {
                 .name("cdc-to-rowdata")
                 .uid("cdc-to-rowdata");
 
-        IcebergSinkFactoryV2.attachSink(rowDataStream, config);
+        IcebergSinkFactoryV2.attachSink(rowDataStream, appConfig);
 
-        env.execute(config.getJobName());
+        env.execute(appConfig.getJobName());
     }
 }

@@ -36,6 +36,7 @@ public class AppConfig implements Serializable {
     // ── Runtime ───────────────────────────────────────────────────────────────
     private final String jobName;
     private final long checkpointIntervalMs;
+    private final int parallelism;
 
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,7 @@ public class AppConfig implements Serializable {
 
         this.jobName               = "debezium-cdc-iceberg";
         this.checkpointIntervalMs  = 30_000L;
+        this.parallelism  = 2;
     }
 
     private AppConfig(ParameterTool params) {
@@ -77,6 +79,7 @@ public class AppConfig implements Serializable {
 
         this.jobName               = params.get("job.name", "debezium-cdc-iceberg");
         this.checkpointIntervalMs  = params.getLong("checkpoint.interval.ms", 30_000L);
+        this.parallelism  = params.getInt("parallelism", 2);
     }
 
     public static AppConfig fromArgs(String[] args) {
@@ -108,6 +111,7 @@ public class AppConfig implements Serializable {
     public String getMinioSecretKey()        { return minioSecretKey; }
     public String getJobName()               { return jobName; }
     public long   getCheckpointIntervalMs()  { return checkpointIntervalMs; }
+    public int getParallelism() { return parallelism; }
 
     public String getFullTableIdentifier() {
         return icebergDatabase + "." + icebergTable;
