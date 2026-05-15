@@ -3,8 +3,8 @@ package com.example.sink;
 import com.example.config.AppConfig;
 import com.example.schema.DebeziumAvroToIcebergSchemaConverter;
 import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
-import io.confluent.kafka.schemaregistry.client.SchemaMetadata;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.table.data.RowData;
 import org.apache.hadoop.conf.Configuration;
@@ -19,6 +19,7 @@ import org.apache.iceberg.hive.HiveCatalog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +44,7 @@ public final class IcebergSinkFactoryV2 {
      * Creates the Iceberg table if necessary, then attaches a streaming sink
      * to {@code stream}.
      */
-    public static void attachSink(DataStream<RowData> stream, AppConfig config, List<String> equalityFieldColumns) {
+    public static void attachSink(DataStream<RowData> stream, AppConfig config) throws RestClientException, IOException {
 
         // ── 1. Hadoop config with MinIO / S3A settings ────────────────────────
         Configuration hadoopConf = buildHadoopConf(config);
@@ -61,7 +62,17 @@ public final class IcebergSinkFactoryV2 {
         TableIdentifier tableId = TableIdentifier.of(
                 config.getIcebergDatabase(), config.getIcebergTable());
 
-        ensureTableExists(catalogLoader, tableId, config);
+        SchemaRegistryClient registryClient = new CachedSchemaRegistryClient(config.getSchemaRegistryUrl(), 1000);
+        String schemaKeySubjectName = config.getKafkaTopic() + "-key";
+        String schemaValueSubjectName = config.getKafkaTopic() + "-value";
+        org.apache.avro.Schema keySchema = new org.apache.avro.Schema.Parser().parse(registryClient.getLatestSchemaMetadata(schemaKeySubjectName).getSchema());
+        org.apache.avro.Schema valueSchema = new org.apache.avro.Schema.Parser().parse(registryClient.getLatestSchemaMetadata(schemaValueSubjectName).getSchema());
+
+        List<org.apache.avro.Schema.Field> fields = keySchema.getFields();
+        List<String> equalityFieldColumns = fields.stream().map(org.apache.avro.Schema.Field::name).toList();
+        LOG.info("Equality field columns: {}", equalityFieldColumns.toString());
+
+        ensureTableExists(catalogLoader, tableId, valueSchema);
 
         // ── 5. TableLoader ────────────────────────────────────────────────────
         TableLoader tableLoader = TableLoader.fromCatalog(catalogLoader, tableId);
@@ -136,13 +147,9 @@ public final class IcebergSinkFactoryV2 {
      */
     private static void ensureTableExists(CatalogLoader catalogLoader,
                                           TableIdentifier tableId,
-                                          AppConfig config) {
+                                          org.apache.avro.Schema avroSchema) {
         try (HiveCatalog catalog = (HiveCatalog) catalogLoader.loadCatalog()) {
             if (!catalog.tableExists(tableId)) {
-                SchemaRegistryClient registryClient = new CachedSchemaRegistryClient(config.getSchemaRegistryUrl(), 1000);
-                String schemaSubjectName = config.getKafkaTopic() + "-value";
-                SchemaMetadata schemaMetadata = registryClient.getLatestSchemaMetadata(schemaSubjectName);
-                org.apache.avro.Schema avroSchema = new org.apache.avro.Schema.Parser().parse(schemaMetadata.getSchema());
                 Schema icebergSchema = DebeziumAvroToIcebergSchemaConverter.convert(avroSchema);
 
                 // Simple unpartitioned table – add partitioning here if needed:

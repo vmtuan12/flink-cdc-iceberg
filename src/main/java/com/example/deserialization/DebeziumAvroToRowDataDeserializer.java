@@ -105,7 +105,6 @@ public class DebeziumAvroToRowDataDeserializer
 //        System.out.println("Debug rowSchema: " + rowSchema.toString());
 //        System.out.println("Debug after: type " + envelope.get("after").getClass().toString() + " --- " + envelope.get("after"));
 
-        System.out.println("Op: " + op);
         switch (op) {
             case "c", "r":
                 out.collect(recordToRowData(after, RowKind.INSERT));

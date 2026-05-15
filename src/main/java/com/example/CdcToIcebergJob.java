@@ -7,12 +7,15 @@ import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.data.RowData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
+import org.apache.flink.configuration.CheckpointingOptions;
+import org.apache.flink.configuration.Configuration;
+
 
 public class CdcToIcebergJob {
 
@@ -25,9 +28,19 @@ public class CdcToIcebergJob {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
         env.enableCheckpointing(config.getCheckpointIntervalMs());
-        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(config.getCheckpointIntervalMs() / 2);
+        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(config.getCheckpointIntervalMs());
         env.getCheckpointConfig().setCheckpointTimeout(60_000);
         env.getCheckpointConfig().setMaxConcurrentCheckpoints(1);
+        env.getCheckpointConfig().setExternalizedCheckpointCleanup(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
+
+        Configuration flinkConfig = new Configuration();
+
+        flinkConfig.set(CheckpointingOptions.CHECKPOINT_STORAGE, "filesystem");
+        flinkConfig.set(CheckpointingOptions.CHECKPOINTS_DIRECTORY, "s3a://iceberg/flink-checkpoints/" + config.getJobName());
+        flinkConfig.set(CheckpointingOptions.SAVEPOINT_DIRECTORY, "s3a://iceberg/flink-savepoints/" + config.getJobName());
+
+        env.configure(flinkConfig);
+        env.setParallelism(2);
 
         KafkaSource<RowData> kafkaSource = KafkaSource.<RowData>builder()
                 .setBootstrapServers(config.getKafkaBootstrapServers())
@@ -51,7 +64,7 @@ public class CdcToIcebergJob {
                 .name("cdc-to-rowdata")
                 .uid("cdc-to-rowdata");
 
-        IcebergSinkFactoryV2.attachSink(rowDataStream, config, List.of("id"));
+        IcebergSinkFactoryV2.attachSink(rowDataStream, config);
 
         env.execute(config.getJobName());
     }

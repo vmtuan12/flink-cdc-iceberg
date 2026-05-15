@@ -55,7 +55,7 @@ public class AppConfig implements Serializable {
         this.minioAccessKey        = "root";
         this.minioSecretKey        = "root123456";
 
-        this.jobName               = "Debezium-CDC-to-Iceberg";
+        this.jobName               = "debezium-cdc-iceberg";
         this.checkpointIntervalMs  = 30_000L;
     }
 
@@ -75,7 +75,7 @@ public class AppConfig implements Serializable {
         this.minioAccessKey        = params.get("minio.access.key", "root");
         this.minioSecretKey        = params.get("minio.secret.key", "root123456");
 
-        this.jobName               = params.get("job.name", "Debezium-CDC-to-Iceberg");
+        this.jobName               = params.get("job.name", "debezium-cdc-iceberg");
         this.checkpointIntervalMs  = params.getLong("checkpoint.interval.ms", 30_000L);
     }
 

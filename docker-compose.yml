@@ -22,8 +22,6 @@ x-flink-common: &flink-common
       jobmanager.rpc.address: flink-jobmanager
       jobmanager.rpc.port: 6123
       state.backend: rocksdb
-      state.checkpoints.dir: s3a://iceberg/flink-checkpoints
-      state.savepoints.dir: s3a://iceberg/flink-savepoints
       s3.endpoint: http://minio:9000
       s3.access-key: minioadmin
       s3.secret-key: minioadmin
@@ -246,7 +244,7 @@ services:
         -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://hive-metastore-db:5432/metastore_db
         -Djavax.jdo.option.ConnectionUserName=hive
         -Djavax.jdo.option.ConnectionPassword=hive
-        -Dhive.metastore.warehouse.dir=s3a://iceberg/
+        -Dhive.metastore.warehouse.dir=s3a://iceberg/warehouse/
     volumes:
       - ./hms/conf/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
       - ./hms/conf/hive-site.xml:/opt/hive/conf/hive-site.xml:ro
@@ -270,7 +268,7 @@ services:
     volumes:
       - ./trino:/etc/trino
     environment:
-      - JAVA_TOOL_OPTIONS=-Xmx4G
+      - JAVA_TOOL_OPTIONS=-Xmx6G
     networks:
       - cdc
 
@@ -304,8 +302,6 @@ services:
         jobmanager.rpc.port: 6123
         jobmanager.memory.process.size: 1600m
         state.backend: rocksdb
-        state.checkpoints.dir: s3a://iceberg/flink-checkpoints
-        state.savepoints.dir: s3a://iceberg/flink-savepoints
         s3.endpoint: http://minio:9000
         s3.access-key: root
         s3.secret-key: root123456
@@ -329,8 +325,6 @@ services:
         taskmanager.memory.process.size: 2048m
         taskmanager.numberOfTaskSlots: 4
         state.backend: rocksdb
-        state.checkpoints.dir: s3a://iceberg/flink-checkpoints
-        state.savepoints.dir: s3a://iceberg/flink-savepoints
         s3.endpoint: http://minio:9000
         s3.access-key: root
         s3.secret-key: root123456
